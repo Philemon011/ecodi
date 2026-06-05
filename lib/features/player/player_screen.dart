@@ -8,41 +8,65 @@ import '../../core/constants/app_text_styles.dart';
 import '../../core/constants/app_dimensions.dart';
 import '../../core/constants/app_animations.dart';
 import '../../core/constants/app_enums.dart';
+import '../../data/models/audio_model.dart';
+import '../../data/models/course_model.dart';
 import 'player_controller.dart';
 
-class PlayerScreen extends StatelessWidget {
+class PlayerScreen extends StatefulWidget {
   const PlayerScreen({super.key});
 
   @override
+  State<PlayerScreen> createState() => _PlayerScreenState();
+}
+
+class _PlayerScreenState extends State<PlayerScreen> {
+  late PlayerController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = Get.find<PlayerController>();
+    _startPlayback();
+  }
+
+  void _startPlayback() {
+    // Attendre le premier frame avant de lancer
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final args = Get.arguments as Map<String, dynamic>?;
+      if (args == null) return;
+
+      final course = args['course'] as CourseModel?;
+      final audio = args['audio'] as AudioModel?;
+      final playlist = args['playlist'] as List<AudioModel>?;
+
+      if (course == null || audio == null || playlist == null) return;
+
+      controller.playAudio(
+        audio: audio,
+        course: course,
+        playlist: playlist,
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final controller = Get.find<PlayerController>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: AppColors.playerBgDark,
+      backgroundColor: isDark ? AppColors.playerBgDark : AppColors.bgLight,
       body: SafeArea(
         child: Column(
           children: [
-            // ── Header ───────────────────────────────
             _buildHeader(controller),
-
-            // ── Image cours ──────────────────────────
             Expanded(
               flex: 4,
               child: _buildArtwork(controller),
             ),
-
-            // ── Infos audio ───────────────────────────
             _buildAudioInfo(controller),
-
-            // ── Barre de progression ──────────────────
             _buildProgressBar(controller),
-
-            // ── Contrôles ────────────────────────────
             _buildControls(controller),
-
-            // ── Vitesse ──────────────────────────────
             _buildSpeedControl(controller),
-
             const SizedBox(height: AppDimensions.lg),
           ],
         ),
@@ -52,6 +76,8 @@ class PlayerScreen extends StatelessWidget {
 
   // ─── Header ──────────────────────────────────────────
   Widget _buildHeader(PlayerController controller) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.screenPadding,
@@ -59,32 +85,31 @@ class PlayerScreen extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Bouton fermer
           GestureDetector(
             onTap: () => Get.back(),
             child: Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
+                color: isDark
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.black.withOpacity(0.06),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Iconsax.arrow_down_2,
-                color: Colors.white,
+                color: isDark ? Colors.white : AppColors.textPrimary,
                 size: 20,
               ),
             ),
           ),
-
-          // Titre centré
           Expanded(
             child: Obx(() => Column(
                   children: [
                     Text(
                       'En cours',
                       style: AppTextStyles.labelSmall.copyWith(
-                        color: Colors.white38,
+                        color: isDark ? Colors.white38 : AppColors.textTertiary,
                         letterSpacing: 1.0,
                       ),
                     ),
@@ -92,7 +117,8 @@ class PlayerScreen extends StatelessWidget {
                     Text(
                       controller.currentCourse.value?.titre ?? '',
                       style: AppTextStyles.labelMedium.copyWith(
-                        color: Colors.white70,
+                        color:
+                            isDark ? Colors.white70 : AppColors.textSecondary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -101,20 +127,20 @@ class PlayerScreen extends StatelessWidget {
                   ],
                 )),
           ),
-
-          // Bouton playlist
           GestureDetector(
             onTap: () => _showPlaylist(controller),
             child: Container(
               width: 40,
               height: 40,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
+                color: isDark
+                    ? Colors.white.withOpacity(0.1)
+                    : Colors.black.withOpacity(0.06),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Iconsax.menu_1,
-                color: Colors.white,
+                color: isDark ? Colors.white : AppColors.textPrimary,
                 size: 20,
               ),
             ),
@@ -188,6 +214,8 @@ class PlayerScreen extends StatelessWidget {
 
   // ─── Infos audio ─────────────────────────────────────
   Widget _buildAudioInfo(PlayerController controller) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Obx(() => Padding(
           padding: const EdgeInsets.symmetric(
             horizontal: AppDimensions.screenPadding,
@@ -202,7 +230,7 @@ class PlayerScreen extends StatelessWidget {
                     Text(
                       controller.currentAudio.value?.titre ?? '',
                       style: AppTextStyles.h3.copyWith(
-                        color: Colors.white,
+                        color: isDark ? Colors.white : AppColors.textPrimary,
                         fontWeight: FontWeight.w700,
                       ),
                       maxLines: 1,
@@ -212,7 +240,8 @@ class PlayerScreen extends StatelessWidget {
                     Text(
                       controller.currentCourse.value?.titre ?? '',
                       style: AppTextStyles.bodyMedium.copyWith(
-                        color: Colors.white54,
+                        color:
+                            isDark ? Colors.white54 : AppColors.textSecondary,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -220,15 +249,13 @@ class PlayerScreen extends StatelessWidget {
                   ],
                 ),
               ),
-
-              // Index leçon
               Container(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppDimensions.md,
                   vertical: AppDimensions.xs,
                 ),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.2),
+                  color: AppColors.primary.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(
                     AppDimensions.radiusFull,
                   ),
@@ -237,10 +264,10 @@ class PlayerScreen extends StatelessWidget {
                   ),
                 ),
                 child: Text(
-                  '${(controller.currentIndex + 1)} / '
+                  '${controller.currentIndex + 1} / '
                   '${controller.playlist.length}',
                   style: AppTextStyles.labelSmall.copyWith(
-                    color: AppColors.primaryLight,
+                    color: AppColors.primary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -252,13 +279,14 @@ class PlayerScreen extends StatelessWidget {
 
   // ─── Barre de progression ─────────────────────────────
   Widget _buildProgressBar(PlayerController controller) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.screenPadding,
       ),
       child: Column(
         children: [
-          // Slider
           Obx(() => SliderTheme(
                 data: SliderThemeData(
                   trackHeight: 3,
@@ -269,8 +297,10 @@ class PlayerScreen extends StatelessWidget {
                     overlayRadius: 14,
                   ),
                   activeTrackColor: AppColors.primary,
-                  inactiveTrackColor: AppColors.progressBg,
-                  thumbColor: Colors.white,
+                  inactiveTrackColor: isDark
+                      ? AppColors.progressBg
+                      : Colors.black.withOpacity(0.1),
+                  thumbColor: AppColors.primary,
                   overlayColor: AppColors.primary.withOpacity(0.2),
                 ),
                 child: Slider(
@@ -278,8 +308,6 @@ class PlayerScreen extends StatelessWidget {
                   onChanged: controller.seekTo,
                 ),
               )),
-
-          // Timestamps
           Obx(() => Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: AppDimensions.sm,
@@ -291,13 +319,19 @@ class PlayerScreen extends StatelessWidget {
                       controller.formatDuration(
                         controller.position.value,
                       ),
-                      style: AppTextStyles.playerTimer,
+                      style: AppTextStyles.playerTimer.copyWith(
+                        color:
+                            isDark ? Colors.white70 : AppColors.textSecondary,
+                      ),
                     ),
                     Text(
                       controller.formatDuration(
                         controller.duration.value,
                       ),
-                      style: AppTextStyles.playerTimer,
+                      style: AppTextStyles.playerTimer.copyWith(
+                        color:
+                            isDark ? Colors.white70 : AppColors.textSecondary,
+                      ),
                     ),
                   ],
                 ),
@@ -307,8 +341,10 @@ class PlayerScreen extends StatelessWidget {
     );
   }
 
-  // ─── Contrôles principaux ─────────────────────────────
+  // ─── Contrôles ────────────────────────────────────────
   Widget _buildControls(PlayerController controller) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: AppDimensions.screenPadding,
@@ -317,42 +353,37 @@ class PlayerScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Précédent
           Obx(() => _ControlButton(
                 icon: Iconsax.previous,
                 size: 24,
+                isDark: isDark,
                 onTap:
                     controller.hasPrevious ? controller.skipToPrevious : null,
                 opacity: controller.hasPrevious ? 1.0 : 0.3,
               )),
-
-          // Recul 15s
           _ControlButton(
             icon: Iconsax.forward_15_seconds,
             size: 26,
+            isDark: isDark,
             onTap: controller.seekBackward,
             isFlipped: true,
           ),
-
-          // Play / Pause principal
           Obx(() => _PlayPauseButton(
                 isPlaying: controller.isPlaying.value,
                 isLoading: controller.isLoading.value ||
                     controller.playerState.value == PlayerState.loading,
                 onTap: controller.togglePlayPause,
               )),
-
-          // Avance 15s
           _ControlButton(
             icon: Iconsax.forward_15_seconds,
             size: 26,
+            isDark: isDark,
             onTap: controller.seekForward,
           ),
-
-          // Suivant
           Obx(() => _ControlButton(
                 icon: Iconsax.next,
                 size: 24,
+                isDark: isDark,
                 onTap: controller.hasNext ? controller.skipToNext : null,
                 opacity: controller.hasNext ? 1.0 : 0.3,
               )),
@@ -361,8 +392,10 @@ class PlayerScreen extends StatelessWidget {
     );
   }
 
-  // ─── Contrôle vitesse ─────────────────────────────────
+  // ─── Vitesse ──────────────────────────────────────────
   Widget _buildSpeedControl(PlayerController controller) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Obx(() => GestureDetector(
           onTap: controller.cycleSpeed,
           child: AnimatedContainer(
@@ -373,23 +406,29 @@ class PlayerScreen extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               color: controller.speed.value != 1.0
-                  ? AppColors.primary.withOpacity(0.2)
-                  : Colors.white.withOpacity(0.08),
+                  ? AppColors.primary.withOpacity(0.15)
+                  : isDark
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.black.withOpacity(0.06),
               borderRadius: BorderRadius.circular(
                 AppDimensions.radiusFull,
               ),
               border: Border.all(
                 color: controller.speed.value != 1.0
                     ? AppColors.primary.withOpacity(0.4)
-                    : Colors.white.withOpacity(0.1),
+                    : isDark
+                        ? Colors.white.withOpacity(0.1)
+                        : Colors.black.withOpacity(0.1),
               ),
             ),
             child: Text(
               '${controller.speed.value}x',
               style: AppTextStyles.labelMedium.copyWith(
                 color: controller.speed.value != 1.0
-                    ? AppColors.primaryLight
-                    : Colors.white70,
+                    ? AppColors.primary
+                    : isDark
+                        ? Colors.white70
+                        : AppColors.textSecondary,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -399,182 +438,173 @@ class PlayerScreen extends StatelessWidget {
 
   // ─── Playlist bottom sheet ────────────────────────────
   void _showPlaylist(PlayerController controller) {
-  Get.bottomSheet(
-    DraggableScrollableSheet(
-      initialChildSize: 0.6,
-      minChildSize: 0.3,
-      maxChildSize: 0.75,
-      expand: false,
-      builder: (context, scrollController) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: AppColors.playerSurface,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(AppDimensions.radiusXl),
-              topRight: Radius.circular(AppDimensions.radiusXl),
+    Get.bottomSheet(
+      DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.75,
+        expand: false,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: AppColors.playerSurface,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(AppDimensions.radiusXl),
+                topRight: Radius.circular(AppDimensions.radiusXl),
+              ),
             ),
-          ),
-          child: Column(
-            children: [
-              // Handle
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(
-                  top: AppDimensions.md,
-                  bottom: AppDimensions.lg,
+            child: Column(
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(
+                    top: AppDimensions.md,
+                    bottom: AppDimensions.lg,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-                decoration: BoxDecoration(
-                  color: Colors.white24,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-
-              // Titre
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppDimensions.screenPadding,
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      'Playlist',
-                      style: AppTextStyles.h3.copyWith(
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(width: AppDimensions.sm),
-                    Text(
-                      '${controller.playlist.length} leçons',
-                      style: AppTextStyles.bodySmall.copyWith(
-                        color: Colors.white38,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: AppDimensions.md),
-
-              // Liste scrollable
-              Expanded(
-                child: Obx(() => ListView.builder(
-                  controller: scrollController,
+                Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppDimensions.screenPadding,
                   ),
-                  itemCount: controller.playlist.length,
-                  itemBuilder: (_, index) {
-                    final audio = controller.playlist[index];
-                    final isCurrent =
-                        audio.id == controller.currentAudio.value?.id;
-
-                    return GestureDetector(
-                      onTap: () {
-                        Get.back();
-                        controller.playAudio(
-                          audio: audio,
-                          course: controller.currentCourse.value!,
-                          playlist: controller.playlist,
-                        );
-                      },
-                      child: AnimatedContainer(
-                        duration: AppAnimations.fast,
-                        margin: const EdgeInsets.only(
-                          bottom: AppDimensions.sm,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppDimensions.md,
-                          vertical: AppDimensions.md,
-                        ),
-                        decoration: BoxDecoration(
-                          color: isCurrent
-                              ? AppColors.primary.withOpacity(0.15)
-                              : Colors.white.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(
-                            AppDimensions.radiusMd,
-                          ),
-                          border: isCurrent
-                              ? Border.all(
-                                  color: AppColors.primary
-                                      .withOpacity(0.3),
-                                )
-                              : null,
-                        ),
-                        child: Row(
-                          children: [
-                            SizedBox(
-                              width: 28,
-                              child: isCurrent
-                                  ? Icon(
-                                      Iconsax.volume_high,
-                                      size: 16,
-                                      color: AppColors.primary,
-                                    )
-                                  : Text(
-                                      '${index + 1}',
-                                      style: AppTextStyles
-                                          .labelSmall
-                                          .copyWith(
-                                        color: Colors.white38,
-                                      ),
-                                    ),
-                            ),
-                            const SizedBox(width: AppDimensions.sm),
-                            Expanded(
-                              child: Text(
-                                audio.titre,
-                                style: AppTextStyles.labelMedium
-                                    .copyWith(
-                                  color: isCurrent
-                                      ? AppColors.primaryLight
-                                      : Colors.white70,
-                                  fontWeight: isCurrent
-                                      ? FontWeight.w600
-                                      : FontWeight.w400,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            Text(
-                              audio.dureeFormatee,
-                              style: AppTextStyles.bodySmall
-                                  .copyWith(
-                                color: Colors.white38,
-                              ),
-                            ),
-                          ],
+                  child: Row(
+                    children: [
+                      Text(
+                        'Playlist',
+                        style: AppTextStyles.h3.copyWith(
+                          color: Colors.white,
                         ),
                       ),
-                    );
-                  },
-                )),
-              ),
+                      const SizedBox(width: AppDimensions.sm),
+                      Text(
+                        '${controller.playlist.length} leçons',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: Colors.white38,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: AppDimensions.md),
+                Expanded(
+                  child: Obx(() => ListView.builder(
+                        controller: scrollController,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppDimensions.screenPadding,
+                        ),
+                        itemCount: controller.playlist.length,
+                        itemBuilder: (_, index) {
+                          final audio = controller.playlist[index];
+                          final isCurrent =
+                              audio.id == controller.currentAudio.value?.id;
 
-              const SizedBox(height: AppDimensions.xl),
-            ],
-          ),
-        );
-      },
-    ),
-    backgroundColor: Colors.transparent,
-    isScrollControlled: true,
-  );
-}
+                          return GestureDetector(
+                            onTap: () {
+                              Get.back();
+                              controller.playAudio(
+                                audio: audio,
+                                course: controller.currentCourse.value!,
+                                playlist: controller.playlist,
+                              );
+                            },
+                            child: AnimatedContainer(
+                              duration: AppAnimations.fast,
+                              margin: const EdgeInsets.only(
+                                bottom: AppDimensions.sm,
+                              ),
+                              padding: const EdgeInsets.all(
+                                AppDimensions.md,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isCurrent
+                                    ? AppColors.primary.withOpacity(0.15)
+                                    : Colors.white.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(
+                                  AppDimensions.radiusMd,
+                                ),
+                                border: isCurrent
+                                    ? Border.all(
+                                        color:
+                                            AppColors.primary.withOpacity(0.3),
+                                      )
+                                    : null,
+                              ),
+                              child: Row(
+                                children: [
+                                  SizedBox(
+                                    width: 28,
+                                    child: isCurrent
+                                        ? Icon(
+                                            Iconsax.volume_high,
+                                            size: 16,
+                                            color: AppColors.primary,
+                                          )
+                                        : Text(
+                                            '${index + 1}',
+                                            style: AppTextStyles.labelSmall
+                                                .copyWith(
+                                              color: Colors.white38,
+                                            ),
+                                          ),
+                                  ),
+                                  const SizedBox(width: AppDimensions.sm),
+                                  Expanded(
+                                    child: Text(
+                                      audio.titre,
+                                      style: AppTextStyles.labelMedium.copyWith(
+                                        color: isCurrent
+                                            ? AppColors.primaryLight
+                                            : Colors.white70,
+                                        fontWeight: isCurrent
+                                            ? FontWeight.w600
+                                            : FontWeight.w400,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Text(
+                                    audio.dureeFormatee,
+                                    style: AppTextStyles.bodySmall.copyWith(
+                                      color: Colors.white38,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      )),
+                ),
+                const SizedBox(height: AppDimensions.xl),
+              ],
+            ),
+          );
+        },
+      ),
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+    );
+  }
 }
 
-// ─── Bouton contrôle générique ────────────────────────────
+// ─── Bouton contrôle ──────────────────────────────────────
 class _ControlButton extends StatefulWidget {
   final IconData icon;
   final double size;
   final VoidCallback? onTap;
   final double opacity;
   final bool isFlipped;
+  final bool isDark; // ← ajouté
 
   const _ControlButton({
     required this.icon,
     required this.size,
+    required this.isDark, // ← ajouté
     this.onTap,
     this.opacity = 1.0,
     this.isFlipped = false,
@@ -626,7 +656,7 @@ class _ControlButtonState extends State<_ControlButton>
             scaleX: widget.isFlipped ? -1 : 1,
             child: Icon(
               widget.icon,
-              color: Colors.white,
+              color: widget.isDark ? Colors.white : AppColors.textPrimary,
               size: widget.size,
             ),
           ),
@@ -636,7 +666,7 @@ class _ControlButtonState extends State<_ControlButton>
   }
 }
 
-// ─── Bouton Play / Pause ──────────────────────────────────
+// ─── Bouton Play/Pause ────────────────────────────────────
 class _PlayPauseButton extends StatefulWidget {
   final bool isPlaying;
   final bool isLoading;

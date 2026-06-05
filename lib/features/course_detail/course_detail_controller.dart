@@ -5,6 +5,9 @@ import '../../data/models/progress_model.dart';
 import '../../data/repositories/audio_repository.dart';
 import '../../data/local/hive_service.dart';
 import '../../core/constants/app_enums.dart';
+import 'package:hive/hive.dart';
+import '../../core/utils/mock_data.dart';
+import '../../data/models/audio_model.dart';
 
 class CourseDetailController extends GetxController {
 
@@ -36,20 +39,47 @@ class CourseDetailController extends GetxController {
   }
 
   // ─── Chargement des audios ────────────────────────────
+  // Future<void> loadAudios() async {
+  //   try {
+  //     isLoading.value = true;
+  //     hasError.value = false;
+
+  //     final result = await _audioRepo.getAudios(course.id);
+  //     audios.assignAll(result);
+
+  //   } catch (e) {
+  //     hasError.value = true;
+  //   } finally {
+  //     isLoading.value = false;
+  //   }
+  // }
+
   Future<void> loadAudios() async {
-    try {
-      isLoading.value = true;
-      hasError.value = false;
+  try {
+    isLoading.value = true;
+    hasError.value = false;
 
-      final result = await _audioRepo.getAudios(course.id);
-      audios.assignAll(result);
+    // Simuler un délai réseau
+    await Future.delayed(const Duration(milliseconds: 500));
 
-    } catch (e) {
-      hasError.value = true;
-    } finally {
-      isLoading.value = false;
+    // Données mock
+    final mockAudios = MockData.getAudios(course.id);
+    audios.assignAll(mockAudios);
+
+    // Mettre en cache Hive pour la recherche
+    final box = Hive.box<AudioModel>('audiosBox');
+    for (final audio in mockAudios) {
+      await box.put('${course.id}_${audio.id}', audio);
     }
+
+    _loadProgress();
+
+  } catch (e) {
+    hasError.value = true;
+  } finally {
+    isLoading.value = false;
   }
+}
 
   // ─── Progression ─────────────────────────────────────
   void _loadProgress() {
