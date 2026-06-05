@@ -1,0 +1,57 @@
+name: ecodi
+description: Application d'enseignement biblique audio
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  get: ^4.6.6
+
+  # HTTP
+  http: ^1.2.0
+
+  # Téléchargement fichiers
+  dio: ^5.4.0
+
+  # Stockage local
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # Audio
+  just_audio: ^0.9.36
+  audio_service: ^0.18.12
+  audio_session: ^0.1.18
+  collection: ^1.18.0
+
+  # Images réseau avec cache
+  cached_network_image: ^3.3.1
+
+  # Chemin fichiers locaux
+  path_provider: ^2.1.2
+
+  # Permissions (Android)
+  permission_handler: ^11.3.0
+
+   # Icônes premium
+  iconsax: ^0.0.8
+
+  # Police Google Fonts
+  google_fonts: ^6.2.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  hive_generator: ^2.0.1
+  build_runner: ^2.4.8
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    # - assets/images/
+    # - assets/icons/
