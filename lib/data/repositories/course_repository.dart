@@ -78,6 +78,11 @@ class CourseRepository {
     return courses;
   }
 
+  // Récupérer un cours depuis le cache uniquement
+CourseModel? getCourseFromCache(int id) {
+  return _box.get(id);
+}
+
   // Tous les cours en cache
 List<CourseModel> getAllCachedCourses() {
   return _box.values.toList();

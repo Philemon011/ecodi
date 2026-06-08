@@ -1,11 +1,10 @@
+import 'package:ecodi/services/progress_service.dart';
 import 'package:get/get.dart';
+import 'package:collection/collection.dart';
 import '../../data/models/course_model.dart';
 import '../../data/models/progress_model.dart';
 import '../../data/repositories/course_repository.dart';
 import '../../data/local/hive_service.dart';
-import 'package:hive/hive.dart';
-import '../../core/utils/mock_data.dart';
-import '../../data/models/course_model.dart';
 
 class HomeController extends GetxController {
 
@@ -27,67 +26,45 @@ class HomeController extends GetxController {
   void onInit() {
     super.onInit();
     loadCourses();
+
+    // Écouter les changements de progression → rebuild des cartes
+    ever(Get.find<ProgressService>().progressions, (_) {
+      courses.refresh();
+      _loadLastCourse();
+    });
   }
 
-  // ─── Chargement des cours ─────────────────────────────
-  // Future<void> loadCourses() async {
-  //   try {
-  //     isLoading.value = true;
-  //     hasError.value = false;
-
-  //     final result = await _courseRepo.getCourses();
-  //     courses.assignAll(result);
-
-  //     // Charger le dernier cours écouté
-  //     _loadLastCourse();
-
-  //   } catch (e) {
-  //     hasError.value = true;
-  //     errorMessage.value = 'Impossible de charger les cours';
-  //   } finally {
-  //     isLoading.value = false;
-  //   }
-  // }
-
+  // ─── Chargement depuis la vraie API ──────────────────
   Future<void> loadCourses() async {
-  try {
-    isLoading.value = true;
-    hasError.value = false;
+    try {
+      isLoading.value = true;
+      hasError.value = false;
 
-    // Simuler un délai réseau
-    await Future.delayed(const Duration(milliseconds: 800));
+      final result = await _courseRepo.getCourses();
+      courses.assignAll(result);
 
-    // Données mock
-    courses.assignAll(MockData.courses);
+      _loadLastCourse();
 
-    // Mettre en cache dans Hive pour la recherche
-    final box = Hive.box<CourseModel>('coursesBox');
-    for (final course in MockData.courses) {
-      await box.put(course.id, course);
+    } catch (e) {
+      hasError.value = true;
+      errorMessage.value = 'Impossible de charger les cours';
+    } finally {
+      isLoading.value = false;
     }
-
-    _loadLastCourse();
-
-  } catch (e) {
-    hasError.value = true;
-    errorMessage.value = 'Impossible de charger les cours';
-  } finally {
-    isLoading.value = false;
   }
-}
 
   // ─── Dernier cours écouté ─────────────────────────────
   void _loadLastCourse() {
     final history = HiveService.getHistory();
     if (history.isEmpty) return;
 
-    // Dernier élément de l'historique
     final lastEntry = history.last;
     final courseId = lastEntry['course_id'] as int?;
     if (courseId == null) return;
 
-    // Trouver le cours dans la liste
-    final course = courses.firstWhereOrNull((c) => c.id == courseId);
+    final course = courses.firstWhereOrNull(
+      (c) => c.id == courseId,
+    );
     if (course == null) return;
 
     lastCourse.value = course;
@@ -96,8 +73,15 @@ class HomeController extends GetxController {
 
   // ─── Progression d'un cours ───────────────────────────
   double getProgression(int courseId) {
-    final progress = HiveService.getProgress(courseId);
-    return progress?.pourcentageAudio ?? 0.0;
+    final course = courses.firstWhereOrNull(
+      (c) => c.id == courseId,
+    );
+    if (course == null) return 0.0;
+
+    return Get.find<ProgressService>().getCourseProgression(
+      courseId,
+      course.nombreLecons,
+    );
   }
 
   // ─── Refresh ─────────────────────────────────────────

@@ -12,14 +12,14 @@ import 'ecodi_progress_bar.dart';
 
 class CourseCard extends StatefulWidget {
   final CourseModel course;
-  final ProgressModel? progress;
+  final double progression;
   final VoidCallback? onTap;
   final bool isHorizontal;
 
   const CourseCard({
     super.key,
     required this.course,
-    this.progress,
+    this.progression = 0.0, 
     this.onTap,
     this.isHorizontal = false,
   });
@@ -28,7 +28,7 @@ class CourseCard extends StatefulWidget {
   const CourseCard.horizontal({
     super.key,
     required this.course,
-    this.progress,
+    this.progression = 0.0,
     this.onTap,
   }) : isHorizontal = true;
 
@@ -80,7 +80,7 @@ class _CourseCardState extends State<CourseCard>
   // ─── Card verticale (grille principale) ──────────────
   Widget _buildVertical() {
   final isDark = Theme.of(context).brightness == Brightness.dark;
-  final progression = widget.progress?.pourcentageAudio ?? 0.0;
+  final progression = widget.progression;
 
   return Container(
     decoration: BoxDecoration(
@@ -168,7 +168,7 @@ class _CourseCardState extends State<CourseCard>
                     ),
 
                     // Progression si commencé
-                    if (widget.progress != null) ...[
+                    if (widget.progression > 0) ...[
                       const SizedBox(height: 6),
                       Row(
                         children: [
@@ -204,7 +204,7 @@ class _CourseCardState extends State<CourseCard>
   // ─── Card horizontale (section "Continuer") ──────────
   Widget _buildHorizontal() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final progression = widget.progress?.pourcentageAudio ?? 0.0;
+    final progression = widget.progression;
 
     return Container(
       height: AppDimensions.cardHeightSmall,

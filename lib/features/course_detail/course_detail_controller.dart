@@ -1,13 +1,14 @@
+import 'package:collection/collection.dart';
 import 'package:get/get.dart';
+
+import '../../core/constants/app_enums.dart';
+import '../../data/local/hive_service.dart';
 import '../../data/models/audio_model.dart';
 import '../../data/models/course_model.dart';
 import '../../data/models/progress_model.dart';
 import '../../data/repositories/audio_repository.dart';
-import '../../data/local/hive_service.dart';
-import '../../core/constants/app_enums.dart';
-import 'package:hive/hive.dart';
-import '../../core/utils/mock_data.dart';
-import '../../data/models/audio_model.dart';
+import '../../services/progress_service.dart';
+import '../player/player_controller.dart';
 
 class CourseDetailController extends GetxController {
 
@@ -29,109 +30,73 @@ class CourseDetailController extends GetxController {
   void onInit() {
     super.onInit();
 
-    // Récupérer le cours passé en argument
     course = Get.arguments as CourseModel;
 
-    // Charger les données
     loadAudios();
-    _loadProgress();
     _checkFavorite();
+
+    // Écouter les changements de progression → rebuild auto
+    ever(Get.find<ProgressService>().progressions, (_) {
+      progress.value = HiveService.getProgress(course.id);
+      audios.refresh();
+    });
   }
 
-  // ─── Chargement des audios ────────────────────────────
-  // Future<void> loadAudios() async {
-  //   try {
-  //     isLoading.value = true;
-  //     hasError.value = false;
-
-  //     final result = await _audioRepo.getAudios(course.id);
-  //     audios.assignAll(result);
-
-  //   } catch (e) {
-  //     hasError.value = true;
-  //   } finally {
-  //     isLoading.value = false;
-  //   }
-  // }
-
+  // ─── Chargement des audios depuis l'API ──────────────
   Future<void> loadAudios() async {
-  try {
-    isLoading.value = true;
-    hasError.value = false;
+    try {
+      isLoading.value = true;
+      hasError.value = false;
 
-    // Simuler un délai réseau
-    await Future.delayed(const Duration(milliseconds: 500));
+      final result = await _audioRepo.getAudios(course.id);
+      audios.assignAll(result);
 
-    // Données mock
-    final mockAudios = MockData.getAudios(course.id);
-    audios.assignAll(mockAudios);
+      // Charger la progression initiale
+      progress.value = HiveService.getProgress(course.id);
 
-    // Mettre en cache Hive pour la recherche
-    final box = Hive.box<AudioModel>('audiosBox');
-    for (final audio in mockAudios) {
-      await box.put('${course.id}_${audio.id}', audio);
+    } catch (e) {
+      hasError.value = true;
+    } finally {
+      isLoading.value = false;
     }
-
-    _loadProgress();
-
-  } catch (e) {
-    hasError.value = true;
-  } finally {
-    isLoading.value = false;
-  }
-}
-
-  // ─── Progression ─────────────────────────────────────
-  void _loadProgress() {
-    progress.value = HiveService.getProgress(course.id);
   }
 
-  // Statut d'un audio précis
+  // ─── Statut d'un audio ────────────────────────────────
   LessonStatus getAudioStatus(AudioModel audio) {
-    final p = progress.value;
-    if (p == null) return LessonStatus.notStarted;
+    final ps = Get.find<ProgressService>();
 
-    // Audio en cours
-    if (p.audioId == audio.id && !p.estTermine) {
+    if (ps.isAudioCompleted(course.id, audio.id)) {
+      return LessonStatus.completed;
+    }
+    if (ps.isAudioInProgress(course.id, audio.id)) {
       return LessonStatus.inProgress;
     }
-
-    // Audio terminé : ordre inférieur à l'audio en cours
-    if (audio.ordre < _getCurrentAudioOrdre()) {
-      return LessonStatus.completed;
-    }
-
-    // Audio terminé explicitement
-    if (p.audioId == audio.id && p.estTermine) {
-      return LessonStatus.completed;
-    }
-
     return LessonStatus.notStarted;
   }
 
-  int _getCurrentAudioOrdre() {
-    final p = progress.value;
-    if (p == null) return 0;
-    final current = audios.firstWhereOrNull(
-      (a) => a.id == p.audioId,
-    );
-    return current?.ordre ?? 0;
-  }
-
-  // Progression globale du cours (0.0 → 1.0)
+  // ─── Progression globale ──────────────────────────────
   double get progressionGlobale {
-    if (audios.isEmpty) return 0.0;
-    final termines = audios
-        .where((a) => getAudioStatus(a) == LessonStatus.completed)
-        .length;
-    return termines / audios.length;
+    return Get.find<ProgressService>().getCourseProgression(
+      course.id,
+      audios.length,
+    );
   }
 
-  // L'audio actuellement en cours
+  // ─── Audio actuellement en lecture ───────────────────
   AudioModel? get currentAudio {
-    final p = progress.value;
-    if (p == null) return null;
-    return audios.firstWhereOrNull((a) => a.id == p.audioId);
+    final playerController = Get.find<PlayerController>();
+
+    if (playerController.currentAudio.value == null) return null;
+    if (playerController.playerState.value == PlayerState.idle) {
+      return null;
+    }
+    if (playerController.playerState.value == PlayerState.stopped) {
+      return null;
+    }
+
+    return audios.firstWhereOrNull(
+      (a) => a.id == playerController.currentAudio.value?.id,
+    );
   }
 
   // ─── Favoris ─────────────────────────────────────────
@@ -156,27 +121,25 @@ class CourseDetailController extends GetxController {
     );
   }
 
-  // Reprendre là où on s'est arrêté
+  // ─── Reprendre le cours ───────────────────────────────
   void resumeCourse() {
-  if (audios.isEmpty) return;
+    if (audios.isEmpty) return;
 
-  final p = progress.value;
-  if (p == null) {
-    playAudio(audios.first);
-    return;
+    final p = progress.value;
+    if (p == null) {
+      playAudio(audios.first);
+      return;
+    }
+
+    final audio = audios.firstWhereOrNull(
+      (a) => a.id == p.audioId,
+    );
+
+    playAudio(audio ?? audios.first);
   }
-
-  // firstWhereOrNull évite le crash
-  final audio = audios.firstWhereOrNull(
-    (a) => a.id == p.audioId,
-  );
-
-  playAudio(audio ?? audios.first);
-}
 
   // ─── Refresh ─────────────────────────────────────────
   Future<void> refresh() async {
     await loadAudios();
-    _loadProgress();
   }
 }

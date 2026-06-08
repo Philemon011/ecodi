@@ -1,3 +1,4 @@
+import 'package:ecodi/services/progress_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:iconsax/iconsax.dart';
@@ -177,7 +178,9 @@ class HomeScreen extends StatelessWidget {
           // Card horizontale
           CourseCard.horizontal(
             course: controller.lastCourse.value!,
-            progress: controller.lastProgress.value,
+            progression: controller.getProgression(
+              controller.lastCourse.value!.id,
+            ),
             onTap: () => controller.goToCourse(
               controller.lastCourse.value!,
             ),
@@ -231,9 +234,7 @@ class HomeScreen extends StatelessWidget {
       itemCount: controller.courses.length,
       itemBuilder: (context, index) {
         final course = controller.courses[index];
-        final progress = HiveService.getProgress(course.id);
 
-        // Animation décalée par index
         return TweenAnimationBuilder<double>(
           tween: Tween(begin: 0.0, end: 1.0),
           duration: Duration(
@@ -249,11 +250,23 @@ class HomeScreen extends StatelessWidget {
               ),
             );
           },
-          child: CourseCard(
-            course: course,
-            progress: progress,
-            onTap: () => controller.goToCourse(course),
-          ),
+          child: Obx(() {
+            // S'abonne aux changements de progression
+            final ps = Get.find<ProgressService>();
+            ps.progressions.value; // déclencheur réactif
+
+            // Progression correcte du cours entier
+            final progression = ps.getCourseProgression(
+              course.id,
+              course.nombreLecons,
+            );
+
+            return CourseCard(
+              course: course,
+              progression: progression, // ← double entre 0.0 et 1.0
+              onTap: () => controller.goToCourse(course),
+            );
+          }),
         );
       },
     );

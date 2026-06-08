@@ -36,9 +36,18 @@ class PlayerController extends GetxController {
   // ─── Lifecycle ───────────────────────────────────────
   @override
   void onInit() {
-    super.onInit();
-    _listenToPlayer();
-  }
+  super.onInit();
+
+  // Réinitialiser l'état au démarrage
+  // Le player est neuf — aucun audio en cours
+  currentAudio.value = null;
+  currentCourse.value = null;
+  isPlaying.value = false;
+  isLoading.value = false;
+  playerState.value = PlayerState.idle;
+
+  _listenToPlayer();
+}
 
   @override
   void onClose() {
@@ -61,80 +70,79 @@ class PlayerController extends GetxController {
 
     // État
     _stateSub = _player.playerStateStream.listen((state) {
-      isPlaying.value = state.playing;
+  isPlaying.value = state.playing;
 
-      playerState.value = switch (state.processingState) {
-        ja.ProcessingState.idle      => PlayerState.idle,
-        ja.ProcessingState.loading   => PlayerState.loading,
-        ja.ProcessingState.buffering => PlayerState.loading,
-        ja.ProcessingState.ready     => state.playing
-            ? PlayerState.playing
-            : PlayerState.paused,
-        ja.ProcessingState.completed => PlayerState.stopped,
-        _                            => PlayerState.idle,
-      };
+  // ── Forcer isLoading à false quand ready ─────────
+  if (state.processingState == ja.ProcessingState.ready ||
+      state.processingState == ja.ProcessingState.completed) {
+    isLoading.value = false;
+  }
 
-      // Audio terminé → suivant automatique
-      if (state.processingState == ja.ProcessingState.completed) {
-        skipToNext();
-      }
-    });
+  playerState.value = switch (state.processingState) {
+    ja.ProcessingState.idle      => PlayerState.idle,
+    ja.ProcessingState.loading   => PlayerState.loading,
+    ja.ProcessingState.buffering => PlayerState.loading,
+    ja.ProcessingState.ready     => state.playing
+        ? PlayerState.playing
+        : PlayerState.paused,
+    ja.ProcessingState.completed => PlayerState.stopped,
+    _                            => PlayerState.idle,
+  };
+
+  // Audio terminé → suivant
+  if (state.processingState == ja.ProcessingState.completed) {
+    skipToNext();
+  }
+});
   }
 
   // ─── Lancer un audio ─────────────────────────────────
-  Future<void> playAudio({
-    required AudioModel audio,
-    required CourseModel course,
-    required List<AudioModel> playlist,
-  }) async {
-    try {
-      isLoading.value = true;
-      playerState.value = PlayerState.loading;
+Future<void> playAudio({
+  required AudioModel audio,
+  required CourseModel course,
+  required List<AudioModel> playlist,
+}) async {
+  try {
+    isLoading.value = true;
+    playerState.value = PlayerState.loading;
 
-      currentAudio.value = audio;
-      currentCourse.value = course;
-      this.playlist.assignAll(playlist);
+    currentAudio.value = audio;
+    currentCourse.value = course;
+    this.playlist.assignAll(playlist);
 
-      debugPrint('▶ Chargement audio : ${audio.urlEffective}');
+    debugPrint('▶ Chargement audio : ${audio.urlEffective}');
 
-      // Récupérer la position sauvegardée
-      final progress = HiveService.getProgress(course.id);
-      Duration? initialPosition;
-      if (progress != null &&
-          progress.audioId == audio.id &&
-          !progress.estTermine) {
-        initialPosition = Duration(
-          seconds: progress.position.toInt(),
-        );
-        debugPrint('⏩ Reprise à : $initialPosition');
-      }
+    // ── Position sauvegardée via ProgressService ──────
+    final progressService = Get.find<ProgressService>();
+    final initialPosition = progressService.getResumePosition(
+      course.id,
+      audio.id,
+    );
 
-      // Charger l'audio
-      await _player.setUrl(
-        audio.urlEffective,
-        initialPosition: initialPosition,
-      );
+    // Charger l'audio
+    await _player.setUrl(
+      audio.urlEffective,
+      initialPosition: initialPosition,
+    );
 
-      // Lancer la lecture
-      await _player.play();
-      debugPrint('✅ Audio en lecture');
+    isLoading.value = false;
 
-      // Historique
-      await HiveService.addToHistory(
-        courseId: course.id,
-        audioId: audio.id,
-      );
+    await _player.play();
+    debugPrint('✅ Audio en lecture');
 
-      // Sauvegarde progression
-      _startProgressTimer();
+    await HiveService.addToHistory(
+      courseId: course.id,
+      audioId: audio.id,
+    );
 
-    } catch (e) {
-      debugPrint('❌ Erreur audio : $e');
-      playerState.value = PlayerState.error;
-    } finally {
-      isLoading.value = false;
-    }
+    _startProgressTimer();
+
+  } catch (e) {
+    debugPrint('❌ Erreur audio : $e');
+    playerState.value = PlayerState.error;
+    isLoading.value = false;
   }
+}
 
   // ─── Contrôles ───────────────────────────────────────
   Future<void> togglePlayPause() async {
@@ -227,25 +235,32 @@ class PlayerController extends GetxController {
 
   // ─── Timer progression ────────────────────────────────
   void _startProgressTimer() {
-    _progressTimer?.cancel();
-    _progressTimer = Timer.periodic(
-      const Duration(seconds: 4),
-      (_) => _saveProgress(),
-    );
-  }
+  final progressService = Get.find<ProgressService>();
+  final audio = currentAudio.value;
+  final course = currentCourse.value;
+  if (audio == null || course == null) return;
+
+  progressService.startTracking(
+    courseId: course.id,
+    audioId: audio.id,
+    dureeAudio: duration.value.inSeconds.toDouble(),
+    getPosition: () async =>
+        _player.position.inSeconds.toDouble(),
+  );
+}
 
   Future<void> _saveProgress() async {
-    final audio = currentAudio.value;
-    final course = currentCourse.value;
-    if (audio == null || course == null) return;
+  final audio = currentAudio.value;
+  final course = currentCourse.value;
+  if (audio == null || course == null) return;
 
-    await HiveService.updateProgress(
-      courseId: course.id,
-      audioId: audio.id,
-      position: position.value.inSeconds.toDouble(),
-      dureeAudio: duration.value.inSeconds.toDouble(),
-    );
-  }
+  await Get.find<ProgressService>().saveNow(
+    courseId: course.id,
+    audioId: audio.id,
+    position: position.value.inSeconds.toDouble(),
+    dureeAudio: duration.value.inSeconds.toDouble(),
+  );
+}
 
   // ─── Helpers ─────────────────────────────────────────
   int get _currentIndex => playlist.indexWhere(

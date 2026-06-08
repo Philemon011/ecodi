@@ -18,6 +18,11 @@ class FavoritesScreen extends StatelessWidget {
     final controller = Get.put(FavoritesController());
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
+    // Recharger à chaque fois qu'on revient sur cet écran
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    controller.loadFavorites();
+  });
+
     return Scaffold(
       backgroundColor:
           isDark ? AppColors.bgDark : AppColors.bgLight,

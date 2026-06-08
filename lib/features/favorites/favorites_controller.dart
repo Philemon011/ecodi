@@ -22,23 +22,28 @@ class FavoritesController extends GetxController {
 
   // ─── Charger les favoris ──────────────────────────────
   Future<void> loadFavorites() async {
-    try {
-      isLoading.value = true;
+  try {
+    isLoading.value = true;
 
-      final ids = HiveService.getFavoriteIds();
-      final courses = <CourseModel>[];
+    final ids = HiveService.getFavoriteIds();
+    final courses = <CourseModel>[];
 
-      for (final id in ids) {
-        final course = await _courseRepo.getCourse(id);
-        if (course != null) courses.add(course);
-      }
+    for (final id in ids) {
+      // Chercher d'abord dans le cache Hive
+      CourseModel? course = _courseRepo.getCourseFromCache(id);
 
-      favorites.assignAll(courses);
+      // Si pas en cache → appel API
+      course ??= await _courseRepo.getCourse(id);
 
-    } finally {
-      isLoading.value = false;
+      if (course != null) courses.add(course);
     }
+
+    favorites.assignAll(courses);
+
+  } finally {
+    isLoading.value = false;
   }
+}
 
   // ─── Retirer un favori ────────────────────────────────
   Future<void> removeFavorite(CourseModel course) async {

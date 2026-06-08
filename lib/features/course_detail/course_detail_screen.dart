@@ -1,3 +1,6 @@
+import 'package:ecodi/features/player/player_controller.dart';
+import 'package:ecodi/services/download_service.dart';
+import 'package:ecodi/services/progress_service.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:iconsax/iconsax.dart';
@@ -11,6 +14,7 @@ import '../../core/widgets/ecodi_button.dart';
 import '../../core/widgets/ecodi_progress_bar.dart';
 import '../../core/widgets/lesson_tile.dart';
 import 'course_detail_controller.dart';
+import '../../data/local/hive_service.dart';
 
 class CourseDetailScreen extends StatelessWidget {
   const CourseDetailScreen({super.key});
@@ -195,7 +199,7 @@ class CourseDetailScreen extends StatelessWidget {
           const SizedBox(height: AppDimensions.lg),
 
           // ── Progression globale ──────────────────────
-          Obx(() => _buildProgression(controller, isDark)),
+          _buildProgression(controller, isDark),
 
           const SizedBox(height: AppDimensions.lg),
 
@@ -215,50 +219,154 @@ class CourseDetailScreen extends StatelessWidget {
   }
 
   // ─── Stats : leçons + durée ───────────────────────────
-  Widget _buildStats(
-    CourseDetailController controller,
-    bool isDark,
-  ) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: AppAnimations.slow,
-      curve: AppAnimations.smooth,
-      builder: (_, value, child) => Opacity(
-        opacity: value,
-        child: Transform.translate(
-          offset: Offset(0, 16 * (1 - value)),
-          child: child,
+Widget _buildStats(
+  CourseDetailController controller,
+  bool isDark,
+) {
+  return TweenAnimationBuilder<double>(
+    tween: Tween(begin: 0.0, end: 1.0),
+    duration: AppAnimations.slow,
+    curve: AppAnimations.smooth,
+    builder: (_, value, child) => Opacity(
+      opacity: value,
+      child: Transform.translate(
+        offset: Offset(0, 16 * (1 - value)),
+        child: child,
+      ),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+
+        // ── Ligne 1 : chips infos ──────────────────
+        Wrap(
+          spacing: AppDimensions.sm,
+          runSpacing: AppDimensions.sm,
+          children: [
+            _StatChip(
+              icon: Iconsax.book,
+              label: '${controller.course.nombreLecons} leçons',
+              isDark: isDark,
+            ),
+            _StatChip(
+              icon: Iconsax.clock,
+              label: controller.course.dureeFormatee,
+              isDark: isDark,
+            ),
+            _StatChip(
+              icon: Iconsax.volume_high,
+              label: 'Audio',
+              isDark: isDark,
+            ),
+          ],
         ),
-      ),
-      child: Row(
-        children: [
-          _StatChip(
-            icon: Iconsax.book,
-            label: '${controller.course.nombreLecons} leçons',
-            isDark: isDark,
-          ),
-          const SizedBox(width: AppDimensions.sm),
-          _StatChip(
-            icon: Iconsax.clock,
-            label: controller.course.dureeFormatee,
-            isDark: isDark,
-          ),
-          const SizedBox(width: AppDimensions.sm),
-          _StatChip(
-            icon: Iconsax.volume_high,
-            label: 'Audio',
-            isDark: isDark,
-          ),
-        ],
-      ),
-    );
-  }
+
+        const SizedBox(height: AppDimensions.md),
+
+        // ── Ligne 2 : bouton télécharger ───────────
+        Obx(() {
+          final ds = Get.find<DownloadService>();
+          final allDownloaded = controller.audios.isNotEmpty &&
+              controller.audios.every(
+                (a) => ds.getStatus(a.id) ==
+                    DownloadStatus.downloaded,
+              );
+
+          // Progression globale si téléchargement en cours
+          final downloading = controller.audios.where(
+            (a) => ds.getStatus(a.id) ==
+                DownloadStatus.downloading,
+          );
+          final isDownloading = downloading.isNotEmpty;
+
+          return GestureDetector(
+            onTap: allDownloaded || isDownloading
+                ? null
+                : () => ds.downloadCourse(
+                      controller.course.id,
+                      controller.audios,
+                    ),
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppDimensions.md,
+                vertical: AppDimensions.sm,
+              ),
+              decoration: BoxDecoration(
+                color: allDownloaded
+                    ? AppColors.success.withOpacity(0.1)
+                    : isDownloading
+                        ? AppColors.primary.withOpacity(0.05)
+                        : AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(
+                  AppDimensions.radiusFull,
+                ),
+                border: Border.all(
+                  color: allDownloaded
+                      ? AppColors.success.withOpacity(0.3)
+                      : AppColors.primary.withOpacity(0.3),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (isDownloading) ...[
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1.5,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Téléchargement...',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ] else ...[
+                    Icon(
+                      allDownloaded
+                          ? Iconsax.tick_circle
+                          : Iconsax.arrow_down,
+                      size: 14,
+                      color: allDownloaded
+                          ? AppColors.success
+                          : AppColors.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      allDownloaded
+                          ? 'Tout téléchargé'
+                          : 'Tout télécharger',
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: allDownloaded
+                            ? AppColors.success
+                            : AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        }),
+      ],
+    ),
+  );
+}
 
   // ─── Progression globale ──────────────────────────────
   Widget _buildProgression(
-    CourseDetailController controller,
-    bool isDark,
-  ) {
+  CourseDetailController controller,
+  bool isDark,
+) {
+  return Obx(() {
+    Get.find<ProgressService>().progressions.value;
+
     final progression = controller.progressionGlobale;
     if (progression == 0.0) return const SizedBox.shrink();
 
@@ -313,7 +421,8 @@ class CourseDetailScreen extends StatelessWidget {
         ],
       ),
     );
-  }
+  });
+}
 
   // ─── Description ─────────────────────────────────────
   Widget _buildDescription(
@@ -365,83 +474,98 @@ class CourseDetailScreen extends StatelessWidget {
         const SizedBox(height: AppDimensions.md),
 
         Obx(() => ListView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: controller.audios.length,
-          itemBuilder: (context, index) {
-            final audio = controller.audios[index];
-            final status = controller.getAudioStatus(audio);
-            final isPlaying =
-                controller.currentAudio?.id == audio.id;
+  shrinkWrap: true,
+  physics: const NeverScrollableScrollPhysics(),
+  itemCount: controller.audios.length,
+  itemBuilder: (context, index) {
+    final audio = controller.audios[index];
 
-            // Animation décalée
-            return TweenAnimationBuilder<double>(
-              tween: Tween(begin: 0.0, end: 1.0),
-              duration: Duration(
-                milliseconds: 300 + (index * 60),
-              ),
-              curve: AppAnimations.smooth,
-              builder: (_, value, child) => Opacity(
-                opacity: value,
-                child: Transform.translate(
-                  offset: Offset(0, 20 * (1 - value)),
-                  child: child,
-                ),
-              ),
-              child: LessonTile(
-                audio: audio,
-                status: status,
-                isPlaying: isPlaying,
-                onTap: () => controller.playAudio(audio),
-              ),
-            );
-          },
-        )),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: Duration(
+        milliseconds: 300 + (index * 60),
+      ),
+      curve: AppAnimations.smooth,
+      builder: (_, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(0, 20 * (1 - value)),
+          child: child,
+        ),
+      ),
+      child: Obx(() {
+        Get.find<ProgressService>().progressions.value;
+
+        final status = controller.getAudioStatus(audio);
+        final playerController = Get.find<PlayerController>();
+
+        final isPlaying =
+            controller.currentAudio?.id == audio.id &&
+            (playerController.isPlaying.value ||
+                playerController.playerState.value ==
+                    PlayerState.loading);
+
+        return LessonTile(
+          audio: audio,
+          status: status,
+          isPlaying: isPlaying,
+          onTap: () => controller.playAudio(audio),
+        );
+      }),
+    );
+  },
+)),
       ],
     );
   }
 
   // ─── Barre bas : bouton Commencer / Reprendre ─────────
-  Widget _buildBottomBar(
-    BuildContext context,
-    CourseDetailController controller,
-    bool isDark,
-  ) {
-    return Container(
-      padding: EdgeInsets.only(
-        left: AppDimensions.screenPadding,
-        right: AppDimensions.screenPadding,
-        top: AppDimensions.md,
-        bottom: MediaQuery.of(context).padding.bottom +
-            AppDimensions.md,
-      ),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.bgDark : AppColors.bgLight,
-        border: Border(
-          top: BorderSide(
-            color: isDark
-                ? Colors.white.withOpacity(0.06)
-                : Colors.black.withOpacity(0.06),
-          ),
+ Widget _buildBottomBar(
+  BuildContext context,
+  CourseDetailController controller,
+  bool isDark,
+) {
+  return Container(
+    padding: EdgeInsets.only(
+      left: AppDimensions.screenPadding,
+      right: AppDimensions.screenPadding,
+      top: AppDimensions.md,
+      bottom: MediaQuery.of(context).padding.bottom +
+          AppDimensions.md,
+    ),
+    decoration: BoxDecoration(
+      color: isDark ? AppColors.bgDark : AppColors.bgLight,
+      border: Border(
+        top: BorderSide(
+          color: isDark
+              ? Colors.white.withOpacity(0.06)
+              : Colors.black.withOpacity(0.06),
         ),
       ),
-      child: Obx(() {
-        final hasProgress =
-            controller.progress.value != null;
+    ),
+    child: Obx(() {
+      // S'abonne aux changements de progression
+      Get.find<ProgressService>().progressions.value;
 
-        return EcodiButton.primary(
-          label: hasProgress ? 'Reprendre' : 'Commencer',
-          fullWidth: true,
-          icon: Icon(
-            hasProgress ? Iconsax.play_circle : Iconsax.play5,
-            color: Colors.white,
-            size: 20,
-          ),
-          onTap: controller.resumeCourse,
-        );
-      }),
-    );
-  }
+      // Vérifie si le cours a déjà été commencé
+      final hasProgress = HiveService.getProgress(
+            controller.course.id,
+          ) !=
+          null;
+
+      return EcodiButton.primary(
+        label: hasProgress ? 'Reprendre' : 'Commencer',
+        fullWidth: true,
+        icon: Icon(
+          hasProgress ? Iconsax.play_circle : Iconsax.play5,
+          color: Colors.white,
+          size: 20,
+        ),
+        onTap: controller.resumeCourse,
+      );
+    }),
+  );
+}
 
   // ─── Skeleton ────────────────────────────────────────
   Widget _buildSkeleton(bool isDark) {

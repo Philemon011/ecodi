@@ -1,4 +1,6 @@
+import 'package:ecodi/services/download_service.dart';
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:iconsax/iconsax.dart';
 
 import '../constants/app_colors.dart';
@@ -14,6 +16,7 @@ class LessonTile extends StatefulWidget {
   final LessonStatus status;
   final bool isPlaying;
   final VoidCallback? onTap;
+  final VoidCallback? onDownload;
 
   const LessonTile({
     super.key,
@@ -21,6 +24,7 @@ class LessonTile extends StatefulWidget {
     required this.status,
     this.isPlaying = false,
     this.onTap,
+    this.onDownload,
   });
 
   @override
@@ -125,25 +129,72 @@ class _LessonTileState extends State<LessonTile>
                 ),
               ),
 
-              // Badge téléchargé
-              if (widget.audio.estTelecharge) ...[
-                const SizedBox(width: AppDimensions.sm),
-                Icon(
-                  Iconsax.tick_circle,
-                  size: 16,
-                  color: AppColors.success,
-                ),
-              ],
+              // ─── Partie droite ────────────────────────────────
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Bouton téléchargement
+                  Obx(() {
+                    final ds = Get.find<DownloadService>();
+                    final status = ds.getStatus(widget.audio.id);
+                    final progress = ds.getProgress(widget.audio.id);
 
-              // Flèche ou animation lecture
-              const SizedBox(width: AppDimensions.sm),
-              widget.isPlaying
-                  ? _PlayingIndicator()
-                  : Icon(
-                      Iconsax.arrow_right_3,
-                      size: AppDimensions.iconSm,
-                      color: AppColors.textTertiary,
-                    ),
+                    if (status == DownloadStatus.downloading) {
+                      return SizedBox(
+                        width: 28,
+                        height: 28,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              value: progress,
+                              strokeWidth: 2,
+                              color: AppColors.primary,
+                              backgroundColor:
+                                  AppColors.primary.withOpacity(0.2),
+                            ),
+                            Text(
+                              '${(progress * 100).toInt()}',
+                              style: AppTextStyles.caption.copyWith(
+                                fontSize: 8,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }
+
+                    if (status == DownloadStatus.downloaded) {
+                      return Icon(
+                        Iconsax.tick_circle5,
+                        size: 18,
+                        color: AppColors.success,
+                      );
+                    }
+
+                    return GestureDetector(
+                      onTap: () => ds.downloadAudio(widget.audio),
+                      child: Icon(
+                        Iconsax.arrow_down_1,
+                        size: 18,
+                        color: AppColors.textTertiary,
+                      ),
+                    );
+                  }),
+
+                  const SizedBox(width: AppDimensions.sm),
+
+                  // Flèche ou animation lecture
+                  widget.isPlaying
+                      ? _PlayingIndicator()
+                      : Icon(
+                          Iconsax.arrow_right_3,
+                          size: AppDimensions.iconSm,
+                          color: AppColors.textTertiary,
+                        ),
+                ],
+              ),
             ],
           ),
         ),

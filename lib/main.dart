@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:audio_service/audio_service.dart';
+import 'package:http/http.dart' as http;
 
 import 'core/theme/app_theme.dart';
 import 'data/models/course_model.dart';
@@ -37,6 +38,16 @@ Future<void> main() async {
   Get.put(ProgressService());
   Get.put(PlayerController(), permanent: true);
   Get.put(DownloadService());
+
+  try {
+  debugPrint('🔍 Test connexion...');
+  final response = await http.get(
+    Uri.parse('http://192.168.1.45:8000/api/v1/courses'),
+  ).timeout(const Duration(seconds: 15));
+  debugPrint('✅ Connexion OK : ${response.statusCode}');
+} catch (e) {
+  debugPrint('❌ Connexion échouée : $e');
+}
 
   runApp(const EcodiApp());
 }

@@ -7,7 +7,10 @@ class ProgressService extends GetxService {
 
   Timer? _timer;
 
-  // ─── Progression observable ───────────────────────────
+  // ─── State réactif observable par tous les écrans ────
+  final RxMap<String, ProgressModel> progressions =
+      <String, ProgressModel>{}.obs;
+
   final RxMap<int, double> courseProgressions =
       <int, double>{}.obs;
 
@@ -23,16 +26,75 @@ class ProgressService extends GetxService {
     super.onClose();
   }
 
-  // ─── Charger toutes les progressions au démarrage ─────
+  // ─── Charger toutes les progressions au démarrage ────
   void _loadAllProgressions() {
-    final box = HiveService.getAllProgressions();
-    for (final progress in box) {
-      courseProgressions[progress.courseId] =
-          progress.pourcentageAudio;
+    final all = HiveService.getAllProgressions();
+    for (final p in all) {
+      final key = '${p.courseId}_${p.audioId}';
+      progressions[key] = p;
+    }
+    _recalculateAllCourses();
+  }
+
+  // ─── Recalculer la progression de tous les cours ─────
+  void _recalculateAllCourses() {
+    final courseIds = progressions.values
+        .map((p) => p.courseId)
+        .toSet();
+
+    for (final courseId in courseIds) {
+      _recalculateCourse(courseId);
     }
   }
 
-  // ─── Démarrer la sauvegarde automatique ───────────────
+  // ─── Recalculer la progression d'un cours ────────────
+  void _recalculateCourse(int courseId) {
+    final entries = progressions.values
+        .where((p) => p.courseId == courseId)
+        .toList();
+
+    if (entries.isEmpty) {
+      courseProgressions[courseId] = 0.0;
+      return;
+    }
+
+    final totalTerminees = entries.where((p) => p.estTermine).length;
+    final enCours = entries
+        .where((p) => !p.estTermine && p.position > 0)
+        .toList();
+
+    // On ne peut pas calculer sans savoir le total des leçons
+    // On stocke juste le nombre de terminées pour l'instant
+    // Le calcul final se fait dans les controllers
+    courseProgressions[courseId] =
+        totalTerminees.toDouble();
+  }
+
+  // ─── Mettre à jour la progression d'un audio ─────────
+  Future<void> updateProgress({
+    required int courseId,
+    required int audioId,
+    required double position,
+    required double dureeAudio,
+  }) async {
+    // Sauvegarder dans Hive
+    await HiveService.updateProgress(
+      courseId: courseId,
+      audioId: audioId,
+      position: position,
+      dureeAudio: dureeAudio,
+    );
+
+    // Mettre à jour le state réactif
+    final key = '${courseId}_$audioId';
+    final updated = HiveService.getAudioProgress(courseId, audioId);
+    if (updated != null) {
+      progressions[key] = updated;
+      _recalculateCourse(courseId);
+    }
+  }
+
+  // ─── Démarrer le tracking ─────────────────────────────
   void startTracking({
     required int courseId,
     required int audioId,
@@ -40,12 +102,11 @@ class ProgressService extends GetxService {
     required Future<double> Function() getPosition,
   }) {
     _timer?.cancel();
-
     _timer = Timer.periodic(
       const Duration(seconds: 4),
       (_) async {
         final position = await getPosition();
-        await _saveProgress(
+        await updateProgress(
           courseId: courseId,
           audioId: audioId,
           position: position,
@@ -61,35 +122,14 @@ class ProgressService extends GetxService {
     _timer = null;
   }
 
-  // ─── Sauvegarder la progression ───────────────────────
-  Future<void> _saveProgress({
-    required int courseId,
-    required int audioId,
-    required double position,
-    required double dureeAudio,
-  }) async {
-    await HiveService.updateProgress(
-      courseId: courseId,
-      audioId: audioId,
-      position: position,
-      dureeAudio: dureeAudio,
-    );
-
-    // Mettre à jour l'observable
-    final progress = HiveService.getProgress(courseId);
-    if (progress != null) {
-      courseProgressions[courseId] = progress.pourcentageAudio;
-    }
-  }
-
-  // ─── Sauvegarder immédiatement (fermeture app) ────────
+  // ─── Sauvegarder immédiatement ────────────────────────
   Future<void> saveNow({
     required int courseId,
     required int audioId,
     required double position,
     required double dureeAudio,
   }) async {
-    await _saveProgress(
+    await updateProgress(
       courseId: courseId,
       audioId: audioId,
       position: position,
@@ -97,38 +137,55 @@ class ProgressService extends GetxService {
     );
   }
 
-  // ─── Récupérer la progression d'un cours ──────────────
-  double getProgression(int courseId) {
-    return courseProgressions[courseId] ?? 0.0;
+  // ─── Getters réactifs ────────────────────────────────
+
+  // Progression d'un audio (0.0 → 1.0)
+  double getAudioProgression(int courseId, int audioId) {
+    final key = '${courseId}_$audioId';
+    return progressions[key]?.pourcentageAudio ?? 0.0;
   }
 
-  // ─── Récupérer la position de reprise ─────────────────
+  // Progression globale d'un cours (0.0 → 1.0)
+  double getCourseProgression(int courseId, int totalLecons) {
+    if (totalLecons == 0) return 0.0;
+
+    final entries = progressions.values
+        .where((p) => p.courseId == courseId)
+        .toList();
+
+    final terminees = entries.where((p) => p.estTermine).length;
+    final enCours = entries
+        .where((p) => !p.estTermine && p.position > 0)
+        .toList();
+
+    double progression = terminees / totalLecons;
+
+    if (enCours.isNotEmpty) {
+      progression += enCours.first.pourcentageAudio / totalLecons;
+    }
+
+    return progression.clamp(0.0, 1.0);
+  }
+
+  // Statut d'un audio
+  bool isAudioCompleted(int courseId, int audioId) {
+    final key = '${courseId}_$audioId';
+    return progressions[key]?.estTermine ?? false;
+  }
+
+  bool isAudioInProgress(int courseId, int audioId) {
+    final key = '${courseId}_$audioId';
+    final p = progressions[key];
+    if (p == null) return false;
+    return !p.estTermine && p.position > 0;
+  }
+
+  // Position de reprise
   Duration? getResumePosition(int courseId, int audioId) {
-    final progress = HiveService.getProgress(courseId);
-    if (progress == null) return null;
-    if (progress.audioId != audioId) return null;
-    if (progress.estTermine) return null;
-    return Duration(seconds: progress.position.toInt());
-  }
-
-  // ─── Marquer un audio comme terminé ──────────────────
-  Future<void> markAsCompleted({
-    required int courseId,
-    required int audioId,
-    required double dureeAudio,
-  }) async {
-    await HiveService.updateProgress(
-      courseId: courseId,
-      audioId: audioId,
-      position: dureeAudio,
-      dureeAudio: dureeAudio,
-    );
-    courseProgressions[courseId] = 1.0;
-  }
-
-  // ─── Réinitialiser la progression d'un cours ──────────
-  Future<void> resetProgression(int courseId) async {
-    await HiveService.deleteProgress(courseId);
-    courseProgressions.remove(courseId);
+    final key = '${courseId}_$audioId';
+    final p = progressions[key];
+    if (p == null) return null;
+    if (p.estTermine) return null;
+    return Duration(seconds: p.position.toInt());
   }
 }

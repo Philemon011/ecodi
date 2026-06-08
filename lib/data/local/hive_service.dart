@@ -12,50 +12,36 @@ class HiveService {
   static Box get _favoritesBox => Hive.box('favoritesBox');
   static Box get _downloadsBox => Hive.box('downloadsBox');
 
-  // ─── Progression ─────────────────────────────────────
+  // ════════════════════════════════════════════════════
+  // PROGRESSION
+  // ════════════════════════════════════════════════════
 
-  // Récupérer la progression d'un cours
-  static ProgressModel? getProgress(int courseId) {
-    return _progressBox.get(courseId);
-  }
+  // Clé unique par audio
+  static String _progressKey(int courseId, int audioId) =>
+      '${courseId}_$audioId';
 
-  // Sauvegarder la progression
-  static Future<void> saveProgress(ProgressModel progress) async {
-    await _progressBox.put(progress.courseId, progress);
-  }
-
-  // ─── Toutes les progressions ──────────────────────────
-static List<ProgressModel> getAllProgressions() {
-  return _progressBox.values.toList();
-}
-
-// ─── Supprimer une progression ────────────────────────
-static Future<void> deleteProgress(int courseId) async {
-  await _progressBox.delete(courseId);
-}
-
-// ─── Effacer tout l'historique ────────────────────────
-static Future<void> clearHistory() async {
-  await _historyBox.delete('history');
-}
-
-  // Créer ou mettre à jour la progression
+  // Sauvegarder la progression d'un audio
   static Future<void> updateProgress({
     required int courseId,
     required int audioId,
     required double position,
     required double dureeAudio,
   }) async {
-    final existing = _progressBox.get(courseId);
+    final key = _progressKey(courseId, audioId);
+    final existing = _progressBox.get(key);
 
     if (existing != null) {
-      existing.mettreAJour(
-        nouvellePosition: position,
-        nouvelAudioId: audioId,
-      );
+      existing.audioId = audioId;
+      existing.position = position;
+      existing.dureeAudio = dureeAudio;
+      existing.derniereLecture = DateTime.now();
+      if (existing.pourcentageAudio >= 0.90) {
+        existing.termine = true;
+      }
+      await existing.save();
     } else {
       await _progressBox.put(
-        courseId,
+        key,
         ProgressModel(
           courseId: courseId,
           audioId: audioId,
@@ -67,41 +53,115 @@ static Future<void> clearHistory() async {
     }
   }
 
-  // Progression globale d'un cours (leçons terminées / total)
-  static double getCourseProgression(int courseId, int totalLecons) {
-    final progress = _progressBox.get(courseId);
-    if (progress == null || totalLecons == 0) return 0.0;
-    return (progress.estTermine ? 1.0 : progress.pourcentageAudio)
-        .clamp(0.0, 1.0);
+  // Dernière leçon écoutée d'un cours
+  static ProgressModel? getProgress(int courseId) {
+    final entries = _progressBox.values
+        .where((p) => p.courseId == courseId)
+        .toList();
+
+    if (entries.isEmpty) return null;
+
+    entries.sort((a, b) =>
+        b.derniereLecture.compareTo(a.derniereLecture));
+
+    return entries.first;
   }
 
-  // ─── Historique ──────────────────────────────────────
+  // Progression d'un audio précis
+  static ProgressModel? getAudioProgress(
+      int courseId, int audioId) {
+    return _progressBox.get(
+      _progressKey(courseId, audioId),
+    );
+  }
 
-  // Récupérer tout l'historique
+  // Nombre de leçons terminées pour un cours
+  static int getCompletedAudiosCount(int courseId) {
+    return _progressBox.values
+        .where((p) => p.courseId == courseId && p.estTermine)
+        .length;
+  }
+
+  // Un audio est-il terminé ?
+  static bool isAudioCompleted(int courseId, int audioId) {
+    final p = _progressBox.get(
+      _progressKey(courseId, audioId),
+    );
+    return p?.estTermine ?? false;
+  }
+
+  // Un audio est-il en cours ?
+  static bool isAudioInProgress(int courseId, int audioId) {
+    final p = _progressBox.get(
+      _progressKey(courseId, audioId),
+    );
+    if (p == null) return false;
+    return !p.estTermine && p.position > 0;
+  }
+
+  // Progression globale d'un cours (0.0 → 1.0)
+  static double getCourseProgression(
+      int courseId, int totalLecons) {
+    if (totalLecons == 0) return 0.0;
+
+    final terminees = getCompletedAudiosCount(courseId);
+
+    final enCours = _progressBox.values
+        .where((p) =>
+            p.courseId == courseId &&
+            !p.estTermine &&
+            p.position > 0)
+        .toList();
+
+    double progression = terminees / totalLecons;
+
+    if (enCours.isNotEmpty) {
+      final current = enCours.first;
+      progression += current.pourcentageAudio / totalLecons;
+    }
+
+    return progression.clamp(0.0, 1.0);
+  }
+
+  // Toutes les progressions d'un cours
+  static List<ProgressModel> getAllProgressions() {
+    return _progressBox.values.toList();
+  }
+
+  // Supprimer la progression d'un cours
+  static Future<void> deleteProgress(int courseId) async {
+    final keys = _progressBox.keys
+        .where((k) => k.toString().startsWith('${courseId}_'))
+        .toList();
+    for (final key in keys) {
+      await _progressBox.delete(key);
+    }
+  }
+
+  // ════════════════════════════════════════════════════
+  // HISTORIQUE
+  // ════════════════════════════════════════════════════
+
   static List<Map<dynamic, dynamic>> getHistory() {
     final history = _historyBox.get('history');
     if (history == null) return [];
     return List<Map<dynamic, dynamic>>.from(history);
   }
 
-  // Ajouter une entrée dans l'historique
   static Future<void> addToHistory({
     required int courseId,
     required int audioId,
   }) async {
     final history = getHistory();
 
-    // Supprimer l'entrée existante pour ce cours
     history.removeWhere((e) => e['course_id'] == courseId);
 
-    // Ajouter en dernier
     history.add({
       'course_id': courseId,
       'audio_id': audioId,
       'date': DateTime.now().toIso8601String(),
     });
 
-    // Garder seulement les 20 derniers
     if (history.length > 20) {
       history.removeAt(0);
     }
@@ -109,15 +169,18 @@ static Future<void> clearHistory() async {
     await _historyBox.put('history', history);
   }
 
-  // ─── Favoris ─────────────────────────────────────────
-
-  // Est-ce qu'un cours est en favori ?
-  static bool isFavorite(int courseId) {
-    final favorites = _getFavoriteIds();
-    return favorites.contains(courseId);
+  static Future<void> clearHistory() async {
+    await _historyBox.delete('history');
   }
 
-  // Ajouter / retirer un favori
+  // ════════════════════════════════════════════════════
+  // FAVORIS
+  // ════════════════════════════════════════════════════
+
+  static bool isFavorite(int courseId) {
+    return _getFavoriteIds().contains(courseId);
+  }
+
   static Future<void> toggleFavorite(int courseId) async {
     final favorites = _getFavoriteIds();
 
@@ -130,19 +193,18 @@ static Future<void> clearHistory() async {
     await _favoritesBox.put('favorites', favorites);
   }
 
-  // Liste des ids favoris
   static List<int> _getFavoriteIds() {
     final raw = _favoritesBox.get('favorites');
     if (raw == null) return [];
     return List<int>.from(raw);
   }
 
-  // Tous les ids favoris (public)
   static List<int> getFavoriteIds() => _getFavoriteIds();
 
-  // ─── Téléchargements ─────────────────────────────────
+  // ════════════════════════════════════════════════════
+  // TÉLÉCHARGEMENTS
+  // ════════════════════════════════════════════════════
 
-  // Sauvegarder le chemin d'un fichier téléchargé
   static Future<void> saveDownload({
     required int audioId,
     required String path,
@@ -156,24 +218,20 @@ static Future<void> clearHistory() async {
     });
   }
 
-  // Supprimer un téléchargement
   static Future<void> removeDownload(int audioId) async {
     await _downloadsBox.delete('dl_$audioId');
   }
 
-  // Récupérer tous les téléchargements
   static List<Map<dynamic, dynamic>> getAllDownloads() {
     return _downloadsBox.values
         .whereType<Map>()
         .toList();
   }
 
-  // Un audio est-il téléchargé ?
   static bool isDownloaded(int audioId) {
     return _downloadsBox.containsKey('dl_$audioId');
   }
 
-  // Chemin local d'un audio téléchargé
   static String? getLocalPath(int audioId) {
     final data = _downloadsBox.get('dl_$audioId');
     if (data == null) return null;

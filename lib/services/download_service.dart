@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get/get.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -25,7 +26,7 @@ class DownloadTask {
 }
 
 class DownloadService extends GetxService {
-  final Dio _dio = Dio();
+  late final Dio _dio;
   final AudioRepository _audioRepo;
 
   // Tâches actives
@@ -33,17 +34,24 @@ class DownloadService extends GetxService {
       <int, DownloadTask>{}.obs;
 
   DownloadService({AudioRepository? audioRepo})
-      : _audioRepo = audioRepo ?? AudioRepository();
+      : _audioRepo = audioRepo ?? AudioRepository() {
+    // ── Dio avec headers ngrok ────────────────────────
+    _dio = Dio(BaseOptions(
+      headers: {
+        // Nécessaire pour ngrok — évite la page d'avertissement
+        'ngrok-skip-browser-warning': 'true',
+        'User-Agent': 'EcodiApp/1.0',
+      },
+      connectTimeout: const Duration(seconds: 30),
+      receiveTimeout: const Duration(minutes: 10),
+    ));
+  }
 
   // ─── Télécharger un audio ─────────────────────────────
   Future<void> downloadAudio(AudioModel audio) async {
-    // Déjà téléchargé
     if (HiveService.isDownloaded(audio.id)) return;
-
-    // Déjà en cours
     if (activeTasks.containsKey(audio.id)) return;
 
-    // Créer la tâche
     final task = DownloadTask(
       audioId: audio.id,
       courseId: audio.courseId,
@@ -53,37 +61,38 @@ class DownloadService extends GetxService {
     task.status.value = DownloadStatus.downloading;
 
     try {
-      // Dossier de destination
       final dir = await _getDownloadDir();
       final fileName = 'audio_${audio.id}.mp3';
       final filePath = '${dir.path}/$fileName';
 
-      // Téléchargement avec progression
       task.cancelToken = CancelToken();
 
+      debugPrint('⬇️ Téléchargement : ${audio.audioUrl}');
+
       await _dio.download(
-        audio.audioUrl,
+        audio.audioUrl, // URL distante toujours
         filePath,
         cancelToken: task.cancelToken,
         onReceiveProgress: (received, total) {
           if (total > 0) {
             task.progress.value = received / total;
+            debugPrint(
+              '📥 ${audio.titre} : '
+              '${(task.progress.value * 100).toInt()}%',
+            );
           }
         },
       );
 
-      // Calculer la taille
       final file = File(filePath);
       final sizeMb = file.lengthSync() / (1024 * 1024);
 
-      // Sauvegarder dans Hive
       await HiveService.saveDownload(
         audioId: audio.id,
         path: filePath,
         sizeMb: sizeMb,
       );
 
-      // Mettre à jour le repo
       await _audioRepo.setLocalPath(
         audio.courseId,
         audio.id,
@@ -93,16 +102,20 @@ class DownloadService extends GetxService {
       task.status.value = DownloadStatus.downloaded;
       task.progress.value = 1.0;
 
+      debugPrint('✅ Téléchargé : ${audio.titre}');
+
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) {
         task.status.value = DownloadStatus.notDownloaded;
+        debugPrint('❌ Annulé : ${audio.titre}');
       } else {
         task.status.value = DownloadStatus.error;
+        debugPrint('❌ Erreur Dio : $e');
       }
     } catch (e) {
       task.status.value = DownloadStatus.error;
+      debugPrint('❌ Erreur : $e');
     } finally {
-      // Retirer la tâche active après 2s
       await Future.delayed(const Duration(seconds: 2));
       activeTasks.remove(audio.id);
     }
@@ -139,6 +152,15 @@ class DownloadService extends GetxService {
     }
 
     await HiveService.removeDownload(audioId);
+
+    // Retirer le chemin local du repo
+    final audio = _audioRepo.getAudioFromBox(audioId);
+    if (audio != null) {
+      await _audioRepo.removeLocalPath(
+        audio.courseId,
+        audioId,
+      );
+    }
   }
 
   // ─── Statut d'un audio ────────────────────────────────
@@ -162,14 +184,16 @@ class DownloadService extends GetxService {
     final downloads = HiveService.getAllDownloads();
     return downloads.fold(
       0.0,
-      (sum, d) => sum + ((d['size_mb'] as num?)?.toDouble() ?? 0.0),
+      (sum, d) =>
+          sum + ((d['size_mb'] as num?)?.toDouble() ?? 0.0),
     );
   }
 
   // ─── Dossier de téléchargement ────────────────────────
   Future<Directory> _getDownloadDir() async {
     final appDir = await getApplicationDocumentsDirectory();
-    final downloadDir = Directory('${appDir.path}/ecodi_audios');
+    final downloadDir =
+        Directory('${appDir.path}/ecodi_audios');
     if (!await downloadDir.exists()) {
       await downloadDir.create(recursive: true);
     }

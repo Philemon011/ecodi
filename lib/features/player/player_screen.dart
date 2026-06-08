@@ -30,24 +30,33 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   void _startPlayback() {
-    // Attendre le premier frame avant de lancer
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      final args = Get.arguments as Map<String, dynamic>?;
-      if (args == null) return;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final args = Get.arguments as Map<String, dynamic>?;
+    if (args == null) return;
 
-      final course = args['course'] as CourseModel?;
-      final audio = args['audio'] as AudioModel?;
-      final playlist = args['playlist'] as List<AudioModel>?;
+    final course = args['course'] as CourseModel?;
+    final audio = args['audio'] as AudioModel?;
+    final playlist = args['playlist'] as List<AudioModel>?;
 
-      if (course == null || audio == null || playlist == null) return;
+    if (course == null || audio == null || playlist == null) return;
 
-      controller.playAudio(
-        audio: audio,
-        course: course,
-        playlist: playlist,
-      );
-    });
-  }
+    // ── Ne pas relancer si c'est déjà le même audio ──
+    final isSameAudio =
+        controller.currentAudio.value?.id == audio.id &&
+        controller.currentCourse.value?.id == course.id;
+
+    if (isSameAudio) {
+      debugPrint('⏯ Même audio — pas de rechargement');
+      return;
+    }
+
+    controller.playAudio(
+      audio: audio,
+      course: course,
+      playlist: playlist,
+    );
+  });
+}
 
   @override
   Widget build(BuildContext context) {

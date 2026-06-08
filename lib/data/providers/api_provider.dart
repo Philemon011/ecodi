@@ -3,42 +3,51 @@ import 'package:http/http.dart' as http;
 
 import '../models/course_model.dart';
 import '../models/audio_model.dart';
+import 'package:flutter/foundation.dart';
 
 class ApiProvider {
   // Change cette URL quand le backend Laravel est déployé
-  static const String baseUrl = 'https://api.ecodi.app/api';
+  // static const String baseUrl = 'http://192.168.1.45:8000/api/v1';
+  static const String baseUrl =
+      'https://bling-roundness-untangled.ngrok-free.dev/api/v1';
 
   // Timeout : 10 secondes max par requête
   static const Duration timeout = Duration(seconds: 10);
 
   final http.Client _client;
 
-  ApiProvider({http.Client? client})
-      : _client = client ?? http.Client();
+  ApiProvider({http.Client? client}) : _client = client ?? http.Client();
 
   // Headers communs à toutes les requêtes
   Map<String, String> get _headers => {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-  };
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
+        'User-Agent': 'EcodiApp/1.0',
+      };
 
   // ─── Cours ───────────────────────────────────────────
 
   // GET /api/courses
   Future<List<CourseModel>> fetchCourses() async {
     try {
+      debugPrint('🌐 Appel API : $baseUrl/courses');
+
       final response = await _client
           .get(Uri.parse('$baseUrl/courses'), headers: _headers)
           .timeout(timeout);
+
+      debugPrint('📡 Status : ${response.statusCode}');
+      debugPrint('📦 Body : ${response.body.substring(0, 100)}');
 
       _checkStatus(response);
 
       final List<dynamic> data = jsonDecode(response.body)['data'];
       return data.map((json) => CourseModel.fromJson(json)).toList();
-
     } on ApiException {
       rethrow;
     } catch (e) {
+      debugPrint('❌ Erreur API : $e');
       throw ApiException(message: 'Erreur réseau : $e');
     }
   }
@@ -54,7 +63,6 @@ class ApiProvider {
 
       final data = jsonDecode(response.body)['data'];
       return CourseModel.fromJson(data);
-
     } on ApiException {
       rethrow;
     } catch (e) {
@@ -75,7 +83,6 @@ class ApiProvider {
 
       final List<dynamic> data = jsonDecode(response.body)['data'];
       return data.map((json) => AudioModel.fromJson(json)).toList();
-
     } on ApiException {
       rethrow;
     } catch (e) {
@@ -88,18 +95,16 @@ class ApiProvider {
   // GET /api/search?q=
   Future<List<CourseModel>> search(String query) async {
     try {
-      final uri = Uri.parse('$baseUrl/search')
-          .replace(queryParameters: {'q': query});
+      final uri =
+          Uri.parse('$baseUrl/search').replace(queryParameters: {'q': query});
 
-      final response = await _client
-          .get(uri, headers: _headers)
-          .timeout(timeout);
+      final response =
+          await _client.get(uri, headers: _headers).timeout(timeout);
 
       _checkStatus(response);
 
       final List<dynamic> data = jsonDecode(response.body)['data'];
       return data.map((json) => CourseModel.fromJson(json)).toList();
-
     } on ApiException {
       rethrow;
     } catch (e) {
